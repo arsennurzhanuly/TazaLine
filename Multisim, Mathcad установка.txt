@@ -1,0 +1,21 @@
+скачать Multisim:
+открой папку "NI Circuit Design Suite 14.2.0_Ru" -> ni-cds-professional_14.2.0_offline -> и открой файл "autorun.exe"
+Дальше сами установливаете но там есть выбор конце Yes/no нажмите No,причина обновление Multisim 
+
+Активировать Multisim:
+откройте папку "Crack" и переместите файл "NI License Activator 1.2.exe" на рабочий стол, открывшиеся окне, надпись 
+Basic,Pro и тд на правый кнопка мышь и нажать "Activate"  и продолжить также снизу и перезагрузить ПК
+
+
+скачать Mathcad:
+откройте папку "MathCAD 15 M050" затем файл setup.exe-> открывшиеся окне нажать "Next" ->поставьте галочку I Accept и все
+дальше нажмите надпись "Mathcad" а не PTC License Server-> галочку trial/new license-> Custom-> Next-> next-> Install
+
+актиивировать Mathcad:
+откройте папку "кряк" и затем 
+1. Устанавливаем PTC Mathcad 15 M050. В ходе установки не трогаем PTC License Server. Выходим из настроек лицензии после установки. 
+
+2. Копируем "mathcad.exe" из папки "Кряк" в установленную папку Маткад (C:\Program Files(x86)\Mathcad\Mathcad15\)
+
+3. С рабочего стола удаляем ярлык MathCAD, запускаем теперь с раннее скопиронного MathCad в папку (C:\Program Files(x86)\Mathcad\Mathcad15\).[Запускать первый раз
+от имени администратора]
