@@ -3,19 +3,30 @@ from github import Github
 import datetime
 import re
 
-# --- НАСТРОЙКИ СТИЛЯ ---
+# --- НАСТРОЙКИ СТИЛЯ (УЛЬТРА-КОМПАКТ) ---
 st.set_page_config(layout="wide", page_title="TazaLine")
 
 st.markdown("""
     <style>
-    .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
-    h1 {font-size: 1.1rem !important; margin-bottom: 0.1rem !important;}
-    .stCheckbox {margin-bottom: -20px !important; margin-top: -5px !important;}
-    /* Уплотняем таблицу */
-    div[data-testid="column"] {gap: 0.5rem !important;}
-    p, div, span {font-size: 13px !important; line-height: 1.2 !important;}
-    hr {margin: 0.2rem 0 !important;}
-    .stButton>button {padding: 2px 10px !important; height: 25px !important; font-size: 12px !important;}
+    /* Убираем все лишние отступы */
+    .block-container {padding: 0.5rem 1rem !important;}
+    h1 {font-size: 1.1rem !important; margin: 0 !important; padding: 0 !important;}
+    .stTabs [data-baseweb="tab-list"] {gap: 5px;}
+    .stTabs [data-baseweb="tab"] {height: 30px; font-size: 12px !important;}
+    
+    /* Табличный стиль: делаем строки очень узкими */
+    div[data-testid="column"] {gap: 0.2rem !important;}
+    .stCheckbox {margin-bottom: -22px !important; margin-top: -5px !important;}
+    p, div, span {font-size: 12px !important; line-height: 1.1 !important;}
+    hr {margin: 0.1rem 0 !important; border-top: 1px solid #eee !important;}
+    
+    /* Кнопки скачивания (маленькие) */
+    .stDownloadButton button, .stLinkButton a {
+        padding: 1px 8px !important;
+        height: 22px !important;
+        font-size: 11px !important;
+        line-height: 20px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -25,7 +36,7 @@ try:
     g = Github(GITHUB_TOKEN)
     repo = g.get_repo(REPO_NAME)
 except:
-    st.error("Ошибка ключа!")
+    st.error("Настройте GITHUB_TOKEN!")
     st.stop()
 
 # --- ФУНКЦИИ ---
@@ -35,14 +46,12 @@ def get_file_info(filepath):
         commits = repo.get_commits(path=filepath)
         last_commit = commits[0]
         dt = last_commit.commit.author.date + datetime.timedelta(hours=5)
-        # Ищем автора в логах, если в коммите просто "GitHub"
-        author = last_commit.commit.author.name
-        if author == "GitHub" or not author:
-            log_content = repo.get_contents("log.txt").decoded_content.decode()
-            for line in reversed(log_content.split('\n')):
-                if filepath in line and "ЗАГРУЗИЛ" in line:
-                    author = line.split('] ')[1].split(':')[0]
-                    break
+        author = "---"
+        log_content = repo.get_contents("log.txt").decoded_content.decode()
+        for line in reversed(log_content.split('\n')):
+            if filepath in line and "ЗАГРУЗИЛ" in line:
+                author = line.split('] ')[1].split(':')[0]
+                break
         return dt.strftime("%d.%m %H:%M"), author
     except:
         return "---", "---"
@@ -104,7 +113,7 @@ try:
     ignore = ["app.py", "requirements.txt", "README.md", "log.txt", "notes.txt", ".gitignore"]
     files = [f for f in all_f if f.name not in ignore]
     
-    cats = {"📊 Excel": [".xlsx", ".xls", ".csv"], "📝 Word/PDF": [".docx", ".pdf", ".txt"], "🖼 Фото": [".jpg", ".png", ".jpeg"], "📦 Прочее": [], "💬 Заметки": []}
+    cats = {"📊 Excel": [".xlsx", ".csv"], "📝 Word/PDF": [".docx", ".pdf", ".txt"], "🖼 Фото": [".jpg", ".png"], "📦 Прочее": [], "💬 Заметки": []}
     tabs = st.tabs(list(cats.keys()))
 
     for i, tab in enumerate(tabs):
@@ -115,7 +124,7 @@ try:
                     note_text = nf.decoded_content.decode()
                 except: note_text = ""
                 new_n = st.text_area("Общие заметки", value=note_text, height=250)
-                if st.button("💾 Сохранить заметки"):
+                if st.button("💾 Сохранить"):
                     try: repo.update_file("notes.txt", "Upd", new_n, nf.sha)
                     except: repo.create_file("notes.txt", "Init", new_n)
                     st.toast("Сохранено")
@@ -130,39 +139,43 @@ try:
                 st.info("Пусто")
                 continue
 
-            # Разделение на колонки (по 20 файлов)
+            # Две колонки (по 20 файлов)
             groups = [cat_files[x:x+20] for x in range(0, len(cat_files), 20)]
             cols = st.columns(len(groups) if len(groups) <= 2 else 2)
 
             for g_idx, group in enumerate(groups):
                 with cols[g_idx % 2]:
                     with st.form(key=f"fm_{i}_{g_idx}"):
-                        # Заголовок таблицы
-                        h1, h2, h3, h4 = st.columns([0.1, 0.5, 0.2, 0.2])
+                        # Шапка
+                        h1, h2, h3, h4 = st.columns([0.1, 0.45, 0.25, 0.2])
                         h1.write("🔘")
-                        h2.write("**Файл (скачать)**")
-                        h3.write("**Дата**")
-                        h4.write("**Кто**")
+                        h2.write("**Файл**")
+                        h3.write("**Дата/Кто**")
+                        h4.write("**Действие**")
                         st.markdown("<hr>", unsafe_allow_html=True)
 
                         selected = []
                         for f in group:
-                            r1, r2, r3, r4 = st.columns([0.1, 0.5, 0.2, 0.2])
+                            r1, r2, r3, r4 = st.columns([0.1, 0.45, 0.25, 0.2])
                             if r1.checkbox("", key=f"c_{f.name}"): selected.append(f)
                             
-                            # ССЫЛКА НА СКАЧИВАНИЕ (Имя файла)
-                            r2.markdown(f"[{f.name}]({f.download_url})")
+                            # Название файла
+                            r2.write(f.name)
                             
+                            # Дата и автор (компактно)
                             f_date, f_user = get_file_info(f.path)
-                            r3.write(f_date)
-                            r4.write(f_user)
+                            r3.write(f"{f_date} | {f_user}")
+                            
+                            # КНОПКА СКАЧИВАНИЯ
+                            r4.link_button("📥", f.download_url)
+                            
                             st.markdown("<hr>", unsafe_allow_html=True)
                         
-                        if st.form_submit_button("🗑 Удалить", type="primary"):
+                        if st.form_submit_button("🗑 Удалить отмеченные", type="primary"):
                             for sf in selected:
                                 repo.delete_file(sf.path, "Del", sf.sha)
                                 write_log(st.session_state["user"], "УДАЛИЛ", sf.name)
                             st.rerun()
 
 except Exception as e:
-    st.error(f"Ошибка системы: {e}")
+    st.error(f"Ошибка: {e}")
