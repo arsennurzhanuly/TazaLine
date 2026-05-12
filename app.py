@@ -9,87 +9,117 @@ try:
     g = Github(GITHUB_TOKEN)
     repo = g.get_repo(REPO_NAME)
 except:
-    st.error("Настройте GITHUB_TOKEN в Secrets (раздел Settings в Streamlit Cloud)!")
+    st.error("Настройте GITHUB_TOKEN в Secrets!")
     st.stop()
+
+# --- ФУНКЦИЯ ЛОГИРОВАНИЯ ---
+def write_log(user, action, filename):
+    now = (datetime.datetime.utcnow() + datetime.timedelta(hours=5)).strftime("%d.%m.%Y %H:%M")
+    log_entry = f"[{now}] Пользователь {user}: {action} -> {filename}\n"
+    log_file = "log.txt"
+    try:
+        contents = repo.get_contents(log_file)
+        new_content = contents.decoded_content.decode() + log_entry
+        repo.update_file(log_file, "Update log", new_content, contents.sha)
+    except:
+        repo.create_file(log_file, "Initial log", log_entry)
 
 # --- АВТОРИЗАЦИЯ ---
 if "auth" not in st.session_state:
-    st.session_state["auth"] = False
+    st.session_state = {"auth": False, "user": ""}
 
 if not st.session_state["auth"]:
-    st.title("🔐 Вход в хранилище")
-    u = st.text_input("Логин")
+    st.markdown("<h3 style='text-align: center;'>🔐 Вход в систему</h3>", unsafe_allow_html=True)
+    u = st.text_input("Логин (Имя)")
     p = st.text_input("Пароль", type="password")
-    if st.button("Войти"):
-        if u == "admin" and p == "12345":
+    if st.button("Войти", use_container_width=True):
+        users = {"Ляззат": "111", "Нуржау": "222"} # ПАРОЛИ ТУТ
+        if u in users and p == users[u]:
             st.session_state["auth"] = True
+            st.session_state["user"] = u
             st.rerun()
         else:
-            st.error("Неверно")
+            st.error("Ошибка доступа")
     st.stop()
 
-# --- ОСНОВНОЙ ИНТЕРФЕЙС ---
+# --- ИНТЕРФЕЙС ---
+st.set_page_config(layout="wide") # Делает сайт широким и компактным
+st.sidebar.write(f"👤 Пользователь: {st.session_state['user']}")
+if st.sidebar.button("Выйти"):
+    st.session_state["auth"] = False
+    st.rerun()
+
 st.title("💾 Виртуальная флешка")
 
-# Блок загрузки (Множественный)
-st.subheader("📤 Загрузка файлов")
-uploaded_files = st.file_uploader("Выберите один или несколько файлов", accept_multiple_files=True)
-
-if uploaded_files:
-    if st.button(f"Загрузить все файлы ({len(uploaded_files)} шт.)"):
-        for uploaded_file in uploaded_files:
-            file_bytes = uploaded_file.read()
-            name = uploaded_file.name
-            try:
-                # Пытаемся создать файл
-                repo.create_file(name, f"Add {name}", file_bytes)
-                st.success(f"✅ {name} сохранен")
-            except Exception as e:
-                # Если файл уже существует, GitHub вернет ошибку 422
-                if "422" in str(e):
-                    st.error(f"❌ {name} уже есть на флешке")
-                else:
-                    st.error(f"❌ Ошибка {name}: {e}")
-        st.info("Обновите страницу, чтобы увидеть новые файлы в списке")
+# Блок загрузки
+with st.expander("📤 Загрузить новые файлы"):
+    uploaded_files = st.file_uploader("Выберите файлы", accept_multiple_files=True)
+    if uploaded_files:
+        if st.button("🚀 Начать массовую загрузку"):
+            for f in uploaded_files:
+                try:
+                    repo.create_file(f.name, f"Add {f.name}", f.read())
+                    write_log(st.session_state["user"], "ЗАГРУЗИЛ", f.name)
+                    st.success(f"Загружен: {f.name}")
+                except:
+                    st.error(f"Ошибка: {f.name} (возможно, уже есть)")
+            st.rerun()
 
 st.divider()
 
-# Блок списка файлов (Сетка)
-st.subheader("📁 Файлы в облаке")
-
+# --- СОРТИРОВКА ПО ПАПКАМ ---
 try:
-    all_contents = repo.get_contents("")
-    # Убираем служебные файлы сайта, чтобы не мешались на флешке
-    files = [f for f in all_contents if f.name not in ["app.py", "requirements.txt", "README.md", ".gitignore", "database.csv"]]
+    all_files = repo.get_contents("")
+    files = [f for f in all_files if f.name not in ["app.py", "requirements.txt", "README.md", ".gitignore", "database.csv", "log.txt"]]
     
-    if not files:
-        st.info("Флешка пуста")
-    else:
-        # Создаем сетку (3 колонки)
-        cols = st.columns(3)
-        for idx, f in enumerate(files):
-            with cols[idx % 3]:
-                # Заголовок файла (обрезаем если слишком длинный)
-                display_name = f.name if len(f.name) < 20 else f.name[:17] + "..."
-                st.markdown(f"{display_name}")
-                
-                # Дата загрузки из GitHub
-                try:
-                    commit = repo.get_commits(path=f.path)[0]
-                    # Время в GitHub по UTC, добавляем 5 часов для КЗ
-                    dt = commit.commit.author.date + datetime.timedelta(hours=5)
-                    st.caption(f"📅 {dt.strftime('%d.%m %H:%M')}")
-                except:
-                    st.caption("📅 Дата не определена")
-                
-                # Кнопки действий
-                btn_cols = st.columns(2)
-                with btn_cols[0]:
-                    st.download_button("📥", f.decoded_content, f.name, key=f"dl_{f.name}", help="Скачать")
-                with btn_cols[1]:
-                    if st.button("🗑", key=f"del_{f.name}", help="Удалить"):
-                        repo.delete_file(f.path, f"Del {f.name}", f.sha)
-                        st.rerun()
-                st.markdown("---")
+    # Категории
+    cats = {
+        "📊 Excel": [".xlsx", ".xls", ".csv"],
+        "📝 Word/PDF": [".docx", ".doc", ".pdf", ".txt"],
+        "🖼 Фото": [".jpg", ".png", ".jpeg", ".gif"],
+        "📦 Прочее": []
+    }
+
+    tab_titles = list(cats.keys())
+    tabs = st.tabs(tab_titles)
+
+    for i, tab in enumerate(tabs):
+        with tab:
+            current_cat_ext = list(cats.values())[i]
+            # Фильтруем файлы для этой вкладки
+            if tab_titles[i] == "📦 Прочее":
+                cat_files = [f for f in files if not any(f.name.lower().endswith(e) for e in [ex for sub in cats.values() for ex in sub])]
+            else:
+                cat_files = [f for f in files if any(f.name.lower().endswith(e) for e in current_cat_ext)]
+
+            if not cat_files:
+                st.info("В этой папке пусто")
+            else:
+                # Отображение компактной сеткой
+                cols = st.columns(4) # 4 файла в ряд для компактности
+                for idx, f in enumerate(cat_files):
+                    with cols[idx % 4]:
+                        st.markdown(f"<p style='font-size:14px; margin-bottom:0;'><b>{f.name[:20]}</b></p>", unsafe_allow_html=True)commit = repo.get_commits(path=f.path)[0]
+                        dt = commit.commit.author.date + datetime.timedelta(hours=5)
+                        st.caption(f"{dt.strftime('%d.%m %H:%M')}")
+                        
+                        # Компактные кнопки
+                        b_col1, b_col2 = st.columns(2)
+                        b_col1.link_button("📥", f.download_url)
+                        if b_col2.button("🗑", key=f"del_{f.name}"):
+                            repo.delete_file(f.path, f"Del {f.name}", f.sha)
+                            write_log(st.session_state["user"], "УДАЛИЛ", f.name)
+                            st.rerun()
+                        st.markdown("<br>", unsafe_allow_html=True)
+
 except Exception as e:
-    st.error(f"Ошибка при получении списка: {e}")
+    st.error(f"Ошибка: {e}")
+
+# Просмотр логов (только для информации)
+if st.sidebar.checkbox("Показать историю действий"):
+    try:
+        log_data = repo.get_contents("log.txt").decoded_content.decode()
+        st.sidebar.text_area("Логи", log_data, height=200)
+    except:
+        st.sidebar.write("Логи пока пусты")
+                    
