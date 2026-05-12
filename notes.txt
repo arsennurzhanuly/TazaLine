@@ -3,44 +3,30 @@ from github import Github
 import datetime
 import re
 
-# --- НАСТРОЙКИ СТИЛЯ (УЛЬТРА-ПЛОТНОСТЬ) ---
+# --- НАСТРОЙКИ СТИЛЯ (УЛЬТРА-КОМПАКТ) ---
 st.set_page_config(layout="wide", page_title="TazaLine")
 
 st.markdown("""
     <style>
-    /* Сдвигаем заголовок вниз */
-    .block-container {padding: 4rem 1rem 0.5rem 1rem !important;}
-    h1 {font-size: 1.2rem !important; margin-bottom: 0.8rem !important; text-align: left;}
+    /* Убираем все лишние отступы */
+    .block-container {padding: 0.5rem 1rem !important;}
+    h1 {font-size: 1.1rem !important; margin: 0 !important; padding: 0 !important;}
+    .stTabs [data-baseweb="tab-list"] {gap: 5px;}
+    .stTabs [data-baseweb="tab"] {height: 30px; font-size: 12px !important;}
     
-    /* Уплотняем вкладки */
-    .stTabs [data-baseweb="tab-list"] {gap: 2px;}
-    .stTabs [data-baseweb="tab"] {height: 24px; font-size: 11px !important; padding: 0 8px !important;}
+    /* Табличный стиль: делаем строки очень узкими */
+    div[data-testid="column"] {gap: 0.2rem !important;}
+    .stCheckbox {margin-bottom: -22px !important; margin-top: -5px !important;}
+    p, div, span {font-size: 12px !important; line-height: 1.1 !important;}
+    hr {margin: 0.1rem 0 !important; border-top: 1px solid #eee !important;}
     
-    /* МАКСИМАЛЬНО БЛИЗКИЙ ШРИФТ В ТАБЛИЦЕ */
-    div[data-testid="column"] {gap: 0px !important;}
-    .stCheckbox {margin-bottom: -25px !important; margin-top: -10px !important;}
-    p, div, span, label {
-        font-size: 12px !important; 
-        line-height: 0.9 !important; 
-        margin: 0 !important; 
-        padding: 0 !important;
-    }
-    
-    /* Тончайшие разделители */
-    hr {margin: 0.02rem 0 !important; border-top: 1px solid #f5f5f5 !important;}
-    
-    /* Мини-кнопки скачивания */
+    /* Кнопки скачивания (маленькие) */
     .stDownloadButton button, .stLinkButton a {
-        padding: 0px 4px !important;
-        height: 16px !important;
-        min-height: 16px !important;
-        font-size: 9px !important;
-        line-height: 14px !important;
-        border-radius: 2px !important;
+        padding: 1px 8px !important;
+        height: 22px !important;
+        font-size: 11px !important;
+        line-height: 20px !important;
     }
-    
-    /* Убираем лишние отступы у форм */
-    [data-testid="stForm"] {padding: 0.2rem !important; border: none !important;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,7 +40,7 @@ except:
     st.stop()
 
 # --- ФУНКЦИИ ---
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def get_file_info(filepath):
     try:
         commits = repo.get_commits(path=filepath)
@@ -68,7 +54,7 @@ def get_file_info(filepath):
                 break
         return dt.strftime("%d.%m %H:%M"), author
     except:
-        return "--.-- --:--", "---"
+        return "---", "---"
 
 def write_log(user, action, filename):
     now = (datetime.datetime.utcnow() + datetime.timedelta(hours=5)).strftime("%d.%m.%Y %H:%M")
@@ -108,7 +94,7 @@ if not st.session_state["auth"]:
     st.stop()
 
 # --- ИНТЕРФЕЙС ---
-st.markdown("<h1>💾 Виртуальная флешка</h1>", unsafe_allow_html=True)
+st.markdown("<h1>💾 TazaLine</h1>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.write(f"👤 **{st.session_state['user']}**")
@@ -137,13 +123,14 @@ try:
                     nf = repo.get_contents("notes.txt")
                     note_text = nf.decoded_content.decode()
                 except: note_text = ""
-                new_n = st.text_area("Заметки", value=note_text, height=150)
+                new_n = st.text_area("Общие заметки", value=note_text, height=250)
                 if st.button("💾 Сохранить"):
                     try: repo.update_file("notes.txt", "Upd", new_n, nf.sha)
                     except: repo.create_file("notes.txt", "Init", new_n)
                     st.toast("Сохранено")
                 continue
 
+            # Фильтр файлов
             exts = list(cats.values())[i]
             if i == 3: cat_files = [f for f in files if not any(f.name.lower().endswith(e) for e in [x for s in cats.values() for x in s])]
             else: cat_files = [f for f in files if any(f.name.lower().endswith(e) for e in exts)]
@@ -152,35 +139,39 @@ try:
                 st.info("Пусто")
                 continue
 
+            # Две колонки (по 20 файлов)
             groups = [cat_files[x:x+20] for x in range(0, len(cat_files), 20)]
             cols = st.columns(len(groups) if len(groups) <= 2 else 2)
 
             for g_idx, group in enumerate(groups):
                 with cols[g_idx % 2]:
-                    with st.form(key=f"f_{i}_{g_idx}"):
-                        # Шапка таблицы
-                        h1, h2, h3 = st.columns([0.1, 0.65, 0.25])
+                    with st.form(key=f"fm_{i}_{g_idx}"):
+                        # Шапка
+                        h1, h2, h3, h4 = st.columns([0.1, 0.45, 0.25, 0.2])
                         h1.write("🔘")
-                        h2.write("**Файл / 📥**")
-                        h3.write("**Дата|Кто**")
+                        h2.write("**Файл**")
+                        h3.write("**Дата/Кто**")
+                        h4.write("**Действие**")
                         st.markdown("<hr>", unsafe_allow_html=True)
 
                         selected = []
                         for f in group:
-                            r1, r2, r3 = st.columns([0.1, 0.65, 0.25])
+                            r1, r2, r3, r4 = st.columns([0.1, 0.45, 0.25, 0.2])
                             if r1.checkbox("", key=f"c_{f.name}"): selected.append(f)
                             
-                            # Название и кнопка в одной ячейке максимально близко
-                            f_info = get_file_info(f.path)
-                            c2_inner = r2.columns([0.85, 0.15])
-                            c2_inner[0].write(f.name)
-                            c2_inner[1].link_button("📥", f.download_url)
+                            # Название файла
+                            r2.write(f.name)
                             
-                            # Дата и автор прижаты вправо
-                            r3.write(f"{f_info[0]}|{f_info[1]}")
+                            # Дата и автор (компактно)
+                            f_date, f_user = get_file_info(f.path)
+                            r3.write(f"{f_date} | {f_user}")
+                            
+                            # КНОПКА СКАЧИВАНИЯ
+                            r4.link_button("📥", f.download_url)
+                            
                             st.markdown("<hr>", unsafe_allow_html=True)
                         
-                        if st.form_submit_button("🗑 Удалить", type="primary"):
+                        if st.form_submit_button("🗑 Удалить отмеченные", type="primary"):
                             for sf in selected:
                                 repo.delete_file(sf.path, "Del", sf.sha)
                                 write_log(st.session_state["user"], "УДАЛИЛ", sf.name)
