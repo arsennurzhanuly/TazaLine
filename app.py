@@ -1,94 +1,95 @@
 import streamlit as st
 from github import Github
 import datetime
-import base64
 
-# --- НАСТРОЙКИ ---
-# Берем токен из секретов Streamlit Cloud
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-REPO_NAME = "arsennurzhanuly/TazaLine" 
-
-# Подключаемся к GitHub
-g = Github(GITHUB_TOKEN)
-repo = g.get_repo(REPO_NAME)
+# --- ИНИЦИАЛИЗАЦИЯ ---
+try:
+    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+    REPO_NAME = "arsennurzhanuly/TazaLine" 
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_repo(REPO_NAME)
+except:
+    st.error("Настройте GITHUB_TOKEN в Secrets (раздел Settings в Streamlit Cloud)!")
+    st.stop()
 
 # --- АВТОРИЗАЦИЯ ---
-def check_password():
-    if "auth" not in st.session_state:
-        st.session_state["auth"] = False
-    if not st.session_state["auth"]:
-        st.title("🔐 Виртуальная флешка: Вход")
-        user = st.text_input("Логин")
-        pwd = st.text_input("Пароль", type="password")
-        if st.button("Войти"):
-            if user == "admin" and pwd == "12345": # Ваши пароли
-                st.session_state["auth"] = True
-                st.rerun()
-            else:
-                st.error("Неверный логин или пароль")
-        return False
-    return True
+if "auth" not in st.session_state:
+    st.session_state["auth"] = False
 
-if check_password():
-    st.title("💾 Моя онлайн флешка")
+if not st.session_state["auth"]:
+    st.title("🔐 Вход в хранилище")
+    u = st.text_input("Логин")
+    p = st.text_input("Пароль", type="password")
+    if st.button("Войти"):
+        if u == "admin" and p == "12345":
+            st.session_state["auth"] = True
+            st.rerun()
+        else:
+            st.error("Неверно")
+    st.stop()
+
+# --- ОСНОВНОЙ ИНТЕРФЕЙС ---
+st.title("💾 Виртуальная флешка")
+
+# Блок загрузки (Множественный)
+st.subheader("📤 Загрузка файлов")
+uploaded_files = st.file_uploader("Выберите один или несколько файлов", accept_multiple_files=True)
+
+if uploaded_files:
+    if st.button(f"Загрузить все файлы ({len(uploaded_files)} шт.)"):
+        for uploaded_file in uploaded_files:
+            file_bytes = uploaded_file.read()
+            name = uploaded_file.name
+            try:
+                # Пытаемся создать файл
+                repo.create_file(name, f"Add {name}", file_bytes)
+                st.success(f"✅ {name} сохранен")
+            except Exception as e:
+                # Если файл уже существует, GitHub вернет ошибку 422
+                if "422" in str(e):
+                    st.error(f"❌ {name} уже есть на флешке")
+                else:
+                    st.error(f"❌ Ошибка {name}: {e}")
+        st.info("Обновите страницу, чтобы увидеть новые файлы в списке")
+
+st.divider()
+
+# Блок списка файлов (Сетка)
+st.subheader("📁 Файлы в облаке")
+
+try:
+    all_contents = repo.get_contents("")
+    # Убираем служебные файлы сайта, чтобы не мешались на флешке
+    files = [f for f in all_contents if f.name not in ["app.py", "requirements.txt", "README.md", ".gitignore", "database.csv"]]
     
-    # --- БЛОК 1: ЗАГРУЗКА ФАЙЛА ---
-    st.subheader("📤 Загрузить новый файл")
-    uploaded_file = st.file_uploader("Выберите любой файл (Excel, Word, Фото и т.д.)")
-    
-    if uploaded_file is not None:
-        file_bytes = uploaded_file.read()
-        file_name = uploaded_file.name
-        
-        if st.button(f"Подтвердить загрузку {file_name}"):
-            with st.spinner('Копирую на флешку...'):
+    if not files:
+        st.info("Флешка пуста")
+    else:
+        # Создаем сетку (3 колонки)
+        cols = st.columns(3)
+        for idx, f in enumerate(files):
+            with cols[idx % 3]:
+                # Заголовок файла (обрезаем если слишком длинный)
+                display_name = f.name if len(f.name) < 20 else f.name[:17] + "..."
+                st.markdown(f"{display_name}")
+                
+                # Дата загрузки из GitHub
                 try:
-                    # Проверяем, нет ли файла с таким именем
-                    repo.create_file(file_name, f"Upload {file_name}", file_bytes)
-                    st.success(f"Файл {file_name} успешно сохранен!")
-                    st.rerun()
+                    commit = repo.get_commits(path=f.path)[0]
+                    # Время в GitHub по UTC, добавляем 5 часов для КЗ
+                    dt = commit.commit.author.date + datetime.timedelta(hours=5)
+                    st.caption(f"📅 {dt.strftime('%d.%m %H:%M')}")
                 except:
-                    st.error("Файл с таким именем уже есть. Переименуйте или удалите старый.")
-
-    st.divider()
-
-    # --- БЛОК 2: СПИСОК ФАЙЛОВ ---
-    st.subheader("📁 Содержимое флешки")
-    
-    # Получаем все файлы из репозитория
-    contents = repo.get_contents("")
-    
-    if len(contents) <= 2: # Если только app.py и requirements.txt
-        st.info("Флешка пока пуста (кроме системных файлов)")
-    
-    for content_file in contents:
-        # Пропускаем системные файлы самого сайта
-        if content_file.name in ["app.py", "requirements.txt", "README.md", ".gitignore"]:
-            continue
-            
-        # Создаем рамку для каждого файла
-        with st.expander(f"📄 {content_file.name}"):
-            # Получаем дату последнего изменения
-            commit = repo.get_commits(path=content_file.path)[0]
-            date_str = commit.commit.author.date.strftime("%d.%m.%Y %H:%M")
-            
-            st.write(f"Дата загрузки: {date_str}")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Кнопка скачивания
-                file_data = content_file.decoded_content
-                st.download_button(
-                    label="📥 Скачать",
-                    data=file_data,
-                    file_name=content_file.name,
-                    mime="application/octet-stream"
-                )
-            
-            with col2:
-                # Кнопка удаления
-                if st.button("🗑 Удалить", key=content_file.name):
-                    repo.delete_file(content_file.path, f"Delete {content_file.name}", content_file.sha)
-                    st.warning(f"Файл {content_file.name} удален")
-                    st.rerun()
+                    st.caption("📅 Дата не определена")
+                
+                # Кнопки действий
+                btn_cols = st.columns(2)
+                with btn_cols[0]:
+                    st.download_button("📥", f.decoded_content, f.name, key=f"dl_{f.name}", help="Скачать")
+                with btn_cols[1]:
+                    if st.button("🗑", key=f"del_{f.name}", help="Удалить"):
+                        repo.delete_file(f.path, f"Del {f.name}", f.sha)
+                        st.rerun()
+                st.markdown("---")
+except Exception as e:
+    st.error(f"Ошибка при получении списка: {e}")
