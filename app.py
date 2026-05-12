@@ -3,17 +3,19 @@ from github import Github
 import datetime
 import re
 
-# --- КОНФИГУРАЦИЯ ---
+# --- НАСТРОЙКИ СТИЛЯ ---
 st.set_page_config(layout="wide", page_title="TazaLine")
 
 st.markdown("""
     <style>
-    .block-container {padding-top: 0.5rem; padding-bottom: 0rem;}
-    h1 {font-size: 1.2rem !important; margin-bottom: 0.2rem;}
-    .stCheckbox {margin-bottom: -15px;}
-    .css-10trblm {font-size: 12px;} 
-    div[data-testid="stExpander"] {margin-top: -15px;}
-    tr, td, th {padding: 2px 5px !important; font-size: 13px !important;}
+    .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
+    h1 {font-size: 1.1rem !important; margin-bottom: 0.1rem !important;}
+    .stCheckbox {margin-bottom: -20px !important; margin-top: -5px !important;}
+    /* Уплотняем таблицу */
+    div[data-testid="column"] {gap: 0.5rem !important;}
+    p, div, span {font-size: 13px !important; line-height: 1.2 !important;}
+    hr {margin: 0.2rem 0 !important;}
+    .stButton>button {padding: 2px 10px !important; height: 25px !important; font-size: 12px !important;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -23,20 +25,27 @@ try:
     g = Github(GITHUB_TOKEN)
     repo = g.get_repo(REPO_NAME)
 except:
-    st.error("Ошибка токена!")
+    st.error("Ошибка ключа!")
     st.stop()
 
 # --- ФУНКЦИИ ---
-def get_user_for_file(filename):
+@st.cache_data(ttl=60)
+def get_file_info(filepath):
     try:
-        log_content = repo.get_contents("log.txt").decoded_content.decode()
-        lines = log_content.split('\n')
-        for line in reversed(lines):
-            if filename in line and "ЗАГРУЗИЛ" in line:
-                match = re.search(r"\] (.*?):", line)
-                return match.group(1) if match else "---"
-    except: pass
-    return "---"
+        commits = repo.get_commits(path=filepath)
+        last_commit = commits[0]
+        dt = last_commit.commit.author.date + datetime.timedelta(hours=5)
+        # Ищем автора в логах, если в коммите просто "GitHub"
+        author = last_commit.commit.author.name
+        if author == "GitHub" or not author:
+            log_content = repo.get_contents("log.txt").decoded_content.decode()
+            for line in reversed(log_content.split('\n')):
+                if filepath in line and "ЗАГРУЗИЛ" in line:
+                    author = line.split('] ')[1].split(':')[0]
+                    break
+        return dt.strftime("%d.%m %H:%M"), author
+    except:
+        return "---", "---"
 
 def write_log(user, action, filename):
     now = (datetime.datetime.utcnow() + datetime.timedelta(hours=5)).strftime("%d.%m.%Y %H:%M")
@@ -51,16 +60,12 @@ def upload_with_rename(uploaded_file, user):
     original_name = uploaded_file.name
     name, ext = (original_name.rsplit('.', 1) if '.' in original_name else (original_name, ''))
     ext = '.' + ext if ext else ''
-    
     final_name = original_name
     counter = 1
-    
-    # Проверка на дубликаты и переименование
     all_files = [f.name for f in repo.get_contents("")]
     while final_name in all_files:
         final_name = f"{name}({counter}){ext}"
         counter += 1
-        
     repo.create_file(final_name, "Add", uploaded_file.read())
     write_log(user, "ЗАГРУЗИЛ", final_name)
     return final_name
@@ -70,96 +75,94 @@ if "auth" not in st.session_state:
     st.session_state.update({"auth": False, "user": ""})
 
 if not st.session_state["auth"]:
-    c1, c2 = st.columns([1, 3])
-    with c1:
-        u = st.text_input("Имя")
-        p = st.text_input("Пароль", type="password")
-        if st.button("Войти", use_container_width=True):
-            users = {"Ляззат": "111", "Нуржау": "222"}
-            if u in users and p == users[u]:
-                st.session_state.update({"auth": True, "user": u})
-                st.rerun()
+    u = st.text_input("Имя")
+    p = st.text_input("Пароль", type="password")
+    if st.button("Войти"):
+        users = {"Ляззат": "111", "Нуржау": "222"}
+        if u in users and p == users[u]:
+            st.session_state.update({"auth": True, "user": u})
+            st.rerun()
     st.stop()
 
-# --- ШАПКА ---
-st.markdown("<h1>💾 TazaLine: Флешка</h1>", unsafe_allow_html=True)
+# --- ИНТЕРФЕЙС ---
+st.markdown("<h1>💾 TazaLine</h1>", unsafe_allow_html=True)
 
 with st.sidebar:
-    st.write(f"👤 {st.session_state['user']}")
+    st.write(f"👤 **{st.session_state['user']}**")
     up_files = st.file_uploader("Загрузка", accept_multiple_files=True, label_visibility="collapsed")
     if up_files and st.button("🚀 Загрузить"):
         for f in up_files:
-            new_name = upload_with_rename(f, st.session_state["user"])
-            st.toast(f"✅ {new_name}")
+            upload_with_rename(f, st.session_state["user"])
         st.rerun()
     if st.button("Выход"):
         st.session_state["auth"] = False
         st.rerun()
 
-# --- ОСНОВНОЙ КОНТЕНТ ---
+# --- ТАБЛИЦЫ ---
 try:
     all_f = repo.get_contents("")
-    files = [f for f in all_f if f.name not in ["app.py", "requirements.txt", "README.md", "log.txt", "notes.txt"]]
+    ignore = ["app.py", "requirements.txt", "README.md", "log.txt", "notes.txt", ".gitignore"]
+    files = [f for f in all_f if f.name not in ignore]
     
     cats = {"📊 Excel": [".xlsx", ".xls", ".csv"], "📝 Word/PDF": [".docx", ".pdf", ".txt"], "🖼 Фото": [".jpg", ".png", ".jpeg"], "📦 Прочее": [], "💬 Заметки": []}
     tabs = st.tabs(list(cats.keys()))
 
     for i, tab in enumerate(tabs):
         with tab:
-            if i == 4: # ЗАМЕТКИ
+            if i == 4: # Заметки
                 try:
-                    notes_file = repo.get_contents("notes.txt")
-                    current_notes = notes_file.decoded_content.decode()
-                except:
-                    current_notes = ""
-                
-                new_note = st.text_area("Текст заметок (общий для всех)", value=current_notes, height=300)
-                if st.button("💾 Сохранить текст"):
-                    try:
-                        repo.update_file("notes.txt", "Update notes", new_note, notes_file.sha)
-                    except:
-                        repo.create_file("notes.txt", "Init notes", new_note)
-                    st.success("Сохранено!")
+                    nf = repo.get_contents("notes.txt")
+                    note_text = nf.decoded_content.decode()
+                except: note_text = ""
+                new_n = st.text_area("Общие заметки", value=note_text, height=250)
+                if st.button("💾 Сохранить заметки"):
+                    try: repo.update_file("notes.txt", "Upd", new_n, nf.sha)
+                    except: repo.create_file("notes.txt", "Init", new_n)
+                    st.toast("Сохранено")
                 continue
 
-            # Фильтрация файлов
+            # Фильтр файлов
             exts = list(cats.values())[i]
-            if i == 3: # Прочее
-                cat_files = [f for f in files if not any(f.name.lower().endswith(e) for e in [x for s in cats.values() for x in s])]
-            else:
-                cat_files = [f for f in files if any(f.name.lower().endswith(e) for e in exts)]
+            if i == 3: cat_files = [f for f in files if not any(f.name.lower().endswith(e) for e in [x for s in cats.values() for x in s])]
+            else: cat_files = [f for f in files if any(f.name.lower().endswith(e) for e in exts)]
 
             if not cat_files:
                 st.info("Пусто")
                 continue
 
-            # Разделение на две таблицы (если > 20 файлов)
-            split_at = 20
-            table_groups = [cat_files[x:x+split_at] for x in range(0, len(cat_files), split_at)]
-            
-            # Если групп больше 1, показываем их в колонках
-            display_cols = st.columns(len(table_groups) if len(table_groups) <= 2 else 2)
-            
-            for g_idx, group in enumerate(table_groups):
-                with display_cols[g_idx % 2]:
-                    with st.form(key=f"f_{i}_{g_idx}"):
-                        st.markdown("🔘 | Имя файла (скачать) | Дата | Кто")
-                        sel = []
+            # Разделение на колонки (по 20 файлов)
+            groups = [cat_files[x:x+20] for x in range(0, len(cat_files), 20)]
+            cols = st.columns(len(groups) if len(groups) <= 2 else 2)
+
+            for g_idx, group in enumerate(groups):
+                with cols[g_idx % 2]:
+                    with st.form(key=f"fm_{i}_{g_idx}"):
+                        # Заголовок таблицы
+                        h1, h2, h3, h4 = st.columns([0.1, 0.5, 0.2, 0.2])
+                        h1.write("🔘")
+                        h2.write("**Файл (скачать)**")
+                        h3.write("**Дата**")
+                        h4.write("**Кто**")
+                        st.markdown("<hr>", unsafe_allow_html=True)
+
+                        selected = []
                         for f in group:
-                            c1, c2, c3, c4 = st.columns([0.1, 0.5, 0.2, 0.2])
-                            if c1.checkbox("", key=f"ch_{f.name}"): sel.append(f)
-                            c2.markdown(f"[{f.name}]({f.download_url})") # Скачивание по клику на имя
+                            r1, r2, r3, r4 = st.columns([0.1, 0.5, 0.2, 0.2])
+                            if r1.checkbox("", key=f"c_{f.name}"): selected.append(f)
                             
-                            commit = repo.get_commits(path=f.path)[0]
-                            dt = commit.commit.author.date + datetime.timedelta(hours=5)
-                            c3.write(dt.strftime("%d.%m %H:%M"))
-                            c4.write(get_user_for_file(f.name))
+                            # ССЫЛКА НА СКАЧИВАНИЕ (Имя файла)
+                            r2.markdown(f"[{f.name}]({f.download_url})")
+                            
+                            f_date, f_user = get_file_info(f.path)
+                            r3.write(f_date)
+                            r4.write(f_user)
+                            st.markdown("<hr>", unsafe_allow_html=True)
                         
-                        if st.form_submit_button("🗑 Удалить отмеченные", type="primary"):
-                            for sf in sel:
+                        if st.form_submit_button("🗑 Удалить", type="primary"):
+                            for sf in selected:
                                 repo.delete_file(sf.path, "Del", sf.sha)
                                 write_log(st.session_state["user"], "УДАЛИЛ", sf.name)
                             st.rerun()
 
 except Exception as e:
-    st.error(f"Ошибка: {e}")
+    st.error(f"Ошибка системы: {e}")
