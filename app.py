@@ -1,36 +1,23 @@
 import streamlit as st
-import pandas as pd
 from github import Github
-import os
+import datetime
+import base64
 
-# --- НАСТРОЙКИ GITHUB ---
+# --- НАСТРОЙКИ ---
+# Берем токен из секретов Streamlit Cloud
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-REPO_NAME = "arsennurzhanuly/TazaLine" # Проверьте, что имя такое же
-FILE_PATH = "database.csv" # Файл, который будет на GitHub
+REPO_NAME = "arsennurzhanuly/TazaLine" 
 
-def save_to_github(dataframe):
-    g = Github(GITHUB_TOKEN)
-    repo = g.get_repo(REPO_NAME)
-    
-    # Превращаем таблицу в текст (CSV)
-    csv_content = dataframe.to_csv(index=False)
-    
-    try:
-        # Проверяем, существует ли файл, чтобы обновить его
-        contents = repo.get_contents(FILE_PATH)
-        repo.update_file(contents.path, "Обновление данных через сайт", csv_content, contents.sha)
-        st.success("✅ Сохранено в GitHub!")
-    except:
-        # Если файла еще нет, создаем его
-        repo.create_file(FILE_PATH, "Начальное создание базы", csv_content)
-        st.success("✅ Файл создан в GitHub!")
+# Подключаемся к GitHub
+g = Github(GITHUB_TOKEN)
+repo = g.get_repo(REPO_NAME)
 
 # --- АВТОРИЗАЦИЯ ---
 def check_password():
     if "auth" not in st.session_state:
         st.session_state["auth"] = False
     if not st.session_state["auth"]:
-        st.title("Вход для двоих")
+        st.title("🔐 Виртуальная флешка: Вход")
         user = st.text_input("Логин")
         pwd = st.text_input("Пароль", type="password")
         if st.button("Войти"):
@@ -38,28 +25,70 @@ def check_password():
                 st.session_state["auth"] = True
                 st.rerun()
             else:
-                st.error("Неверно")
+                st.error("Неверный логин или пароль")
         return False
     return True
 
-# --- ОСНОВНОЕ ОКНО ---
 if check_password():
-    st.title("📊 Общая таблица (Авто-сохранение)")
+    st.title("💾 Моя онлайн флешка")
+    
+    # --- БЛОК 1: ЗАГРУЗКА ФАЙЛА ---
+    st.subheader("📤 Загрузить новый файл")
+    uploaded_file = st.file_uploader("Выберите любой файл (Excel, Word, Фото и т.д.)")
+    
+    if uploaded_file is not None:
+        file_bytes = uploaded_file.read()
+        file_name = uploaded_file.name
+        
+        if st.button(f"Подтвердить загрузку {file_name}"):
+            with st.spinner('Копирую на флешку...'):
+                try:
+                    # Проверяем, нет ли файла с таким именем
+                    repo.create_file(file_name, f"Upload {file_name}", file_bytes)
+                    st.success(f"Файл {file_name} успешно сохранен!")
+                    st.rerun()
+                except:
+                    st.error("Файл с таким именем уже есть. Переименуйте или удалите старый.")
 
-    # Загружаем актуальные данные из GitHub
-    try:
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_repo(REPO_NAME)
-        contents = repo.get_contents(FILE_PATH)
-        df = pd.read_csv(contents.download_url)
-    except:
-        # Если файла нет в репозитории, создаем пустой пример
-        df = pd.DataFrame({"Дата": ["2024-01-01"], "Сумма": [0], "Комментарий": ["Начни здесь"]})
+    st.divider()
 
-    # Редактор таблицы
-    st.info("Измените ячейки ниже и нажмите кнопку сохранения")
-    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-
-    if st.button("💾 СОХРАНИТЬ НАВСЕГДА"):
-        with st.spinner('Отправка данных в репозиторий...'):
-            save_to_github(edited_df)
+    # --- БЛОК 2: СПИСОК ФАЙЛОВ ---
+    st.subheader("📁 Содержимое флешки")
+    
+    # Получаем все файлы из репозитория
+    contents = repo.get_contents("")
+    
+    if len(contents) <= 2: # Если только app.py и requirements.txt
+        st.info("Флешка пока пуста (кроме системных файлов)")
+    
+    for content_file in contents:
+        # Пропускаем системные файлы самого сайта
+        if content_file.name in ["app.py", "requirements.txt", "README.md", ".gitignore"]:
+            continue
+            
+        # Создаем рамку для каждого файла
+        with st.expander(f"📄 {content_file.name}"):
+            # Получаем дату последнего изменения
+            commit = repo.get_commits(path=content_file.path)[0]
+            date_str = commit.commit.author.date.strftime("%d.%m.%Y %H:%M")
+            
+            st.write(f"Дата загрузки: {date_str}")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Кнопка скачивания
+                file_data = content_file.decoded_content
+                st.download_button(
+                    label="📥 Скачать",
+                    data=file_data,
+                    file_name=content_file.name,
+                    mime="application/octet-stream"
+                )
+            
+            with col2:
+                # Кнопка удаления
+                if st.button("🗑 Удалить", key=content_file.name):
+                    repo.delete_file(content_file.path, f"Delete {content_file.name}", content_file.sha)
+                    st.warning(f"Файл {content_file.name} удален")
+                    st.rerun()
