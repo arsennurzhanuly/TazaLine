@@ -99,7 +99,8 @@ try:
                 cols = st.columns(4) # 4 файла в ряд для компактности
                 for idx, f in enumerate(cat_files):
                     with cols[idx % 4]:
-                        st.markdown(f"<p style='font-size:14px; margin-bottom:0;'><b>{f.name[:20]}</b></p>", unsafe_allow_html=True)commit = repo.get_commits(path=f.path)[0]
+                        st.markdown(f"<p style='font-size:14px; margin-bottom:0;'><b>{f.name[:20]}</b></p>", unsafe_allow_html=True)
+                        commit = repo.get_commits(path=f.path)[0]
                         dt = commit.commit.author.date + datetime.timedelta(hours=5)
                         st.caption(f"{dt.strftime('%d.%m %H:%M')}")
                         
@@ -122,4 +123,3 @@ if st.sidebar.checkbox("Показать историю действий"):
         st.sidebar.text_area("Логи", log_data, height=200)
     except:
         st.sidebar.write("Логи пока пусты")
-                    
